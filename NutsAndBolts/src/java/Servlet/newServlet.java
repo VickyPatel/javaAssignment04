@@ -13,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -20,88 +21,105 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
 /**
  *
  * @author c0633648
  */
-@WebServlet("/products")
-public class newServlet extends HttpServlet {
+@Path("/products")
+public class newServlet {
 
-    @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) {
-        response.setHeader("Content-Type", "text/plain-text");
+    @GET
+    @Produces("application/json")
+    public String doGet() {
 
-        try (PrintWriter out = response.getWriter()) {
+        JSONArray json = new JSONArray();
+        Connection conn = DBConnect.getConnection();
 
-            if (!request.getParameterNames().hasMoreElements()) {
-                out.println(getResult("SELECT * FROM product"));
-            } else {
-                int id = Integer.parseInt(request.getParameter("id"));
-                System.out.println("hello");
-                out.println(getResult("SELECT * FROM product WHERE productID = ?", String.valueOf(id)));
+        try {
+
+            String query = "SELECT * FROM product";
+            PreparedStatement pst = conn.prepareStatement(query);
+            ResultSet rs = pst.executeQuery();
+
+            while (rs.next()) {
+                int total = rs.getMetaData().getColumnCount();
+                JSONObject jsonObj = new JSONObject();
+
+                for (int i = 0; i < total; i++) {
+                    String name = rs.getMetaData().getColumnLabel(i + 1).toLowerCase();
+                    Object value = rs.getObject(i + 1);
+                    jsonObj.put(name, value);
+
+                }
             }
-        } catch (IOException ex) {
-            System.err.println(ex.getMessage());
 
+        } catch (SQLException ex) {
+            Logger.getLogger(newServlet.class.getName()).log(Level.SEVERE, null, ex);
         }
+
+        return json.toJSONString();
     }
 
-    @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) {
-        Set<String> key = request.getParameterMap().keySet();
-        try (PrintWriter out = response.getWriter()) {
-            if (key.contains("name") && key.contains("description") && key.contains("quantity")) {
-                String name = request.getParameter("name");
-                String desc = request.getParameter("description");
-                String quant = request.getParameter("quantity");
+    @POST
+    @Path("{productID}")
+    protected void doPost(String data) throws ParseException {
+        JSONObject jsonData = (JSONObject) new JSONParser().parse(data);
 
-                doUpdate("INSERT INTO product (name,description,quantity) VALUES (?,?,?)", name, desc, quant);
-                out.println("http://localhost:8080/NutsAndBolts/products?id="+doUpdate("SELECT LAST_INSERT_ID()"));
-            } else {
-                response.setStatus(500);
-            }
-        } catch (IOException ex) {
+        String name = (String) jsonData.get("name");
+        String desc = (String) jsonData.get("description");
+        long quant = (long) jsonData.get("quantity");
+
+        doUpdate("INSERT INTO product (name,description,quantity) VALUES (?,?,?)", name, desc, quant);
+    }
+
+    @PUT
+    @Path("{productID}")
+    protected void doPut(@PathParam("productID") int productID, String str) throws ParseException {
+
+        try {
+            JSONObject jsonData = (JSONObject) new JSONParser().parse(str);
+            
+            String name = (String) jsonData.get("name");
+            String desc = (String) jsonData.get("description");
+            long quant = (long) jsonData.get("quantity");
+            
+            Connection conn = DBConnect.getConnection();
+            String query = "UPDATE product SET name=\'" + name + "\',description=\'" + desc + "\',quantity=" + quant + " where productID= " + productID;
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            pstmt.executeUpdate();
+        } catch (SQLException ex) {
             Logger.getLogger(newServlet.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 
-    @Override
-    protected void doPut(HttpServletRequest request, HttpServletResponse response) {
-        Set<String> key = request.getParameterMap().keySet();
-        try (PrintWriter out = response.getWriter()) {
-            if (key.contains("productID") && key.contains("name") && key.contains("description") && key.contains("quantity")) {
-                String id = request.getParameter("productID");
-                String name = request.getParameter("name");
-                String desc = request.getParameter("description");
-                String quant = request.getParameter("quantity");
+    @DELETE
+    @Path("{productID}")
+    protected void doDelete(@PathParam("productID") int id) {
 
-                doUpdate("UPDATE product SET name=?,description=?,quantity=? where productID=? ", name, desc, quant, id);
-                out.println("http://localhost:8080/NutsAndBolts/products?id=" + id);
-            } else {
-                response.setStatus(500);
-            }
-        } catch (IOException ex) {
-            Logger.getLogger(newServlet.class.getName()).log(Level.SEVERE, null, ex);
+        try {
+            Connection conn = DBConnect.getConnection();
+
+            String query = "DELETE FROM product where productID= " + id;
+            PreparedStatement pst = conn.prepareStatement(query);
+            pst.execute();
+
+        } catch (SQLException ex) {
+            Logger.getLogger(newServlet.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
-    }
 
-    @Override
-    protected void doDelete(HttpServletRequest request, HttpServletResponse response) {
-        Set<String> key = request.getParameterMap().keySet();
-        try (PrintWriter out = response.getWriter()) {
-            if (key.contains("productID")) {
-                String id = request.getParameter("productID");
-
-                doUpdate("DELETE FROM product where productID=? ", id);
-
-            } else {
-                response.setStatus(500);
-            }
-        } catch (IOException ex) {
-            Logger.getLogger(newServlet.class.getName()).log(Level.SEVERE, null, ex);
-        }
     }
 
     public String getResult(String query, String... parameter) {
@@ -130,18 +148,25 @@ public class newServlet extends HttpServlet {
         return sb.toString();
     }
 
-    private int doUpdate(String query, String... parameter) {
-        int change = 0;
+    private void doUpdate(String query, String name, String desc, long quant) {
+
+        ArrayList list = new ArrayList();
+        list.add(name);
+        list.add(desc);
+        list.add(quant);
+
         try (Connection conn = DBConnect.getConnection()) {
             PreparedStatement pstmt = conn.prepareStatement(query);
-            for (int i = 1; i <= parameter.length; i++) {
-                pstmt.setString(i, parameter[i - 1]);
+            for (int i = 1; i <= list.size(); i++) {
+                pstmt.setString(i, list.get(i - 1).toString());
             }
-            change = pstmt.executeUpdate();
+            pstmt.executeUpdate();
+
         } catch (SQLException ex) {
-            Logger.getLogger(newServlet.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(newServlet.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
-        return change;
+
     }
 
 }
